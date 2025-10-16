@@ -24,14 +24,14 @@ export async function GET() {
     frame: {
       version: "1",
       name: "ETH Mood Meter",
-      iconUrl: `${APP_URL}/icon.png`,
+      iconUrl: `${APP_URL}/icon.svg`,
       homeUrl: `${APP_URL}`,
-      imageUrl: `${APP_URL}/preview.png`,
+      imageUrl: `${APP_URL}/preview.svg`,
       screenshotUrls: [],
       tags: ["base", "farcaster", "miniapp", "mood", "ethereum"],
       primaryCategory: "developer-tools",
       buttonTitle: "Open",
-      splashImageUrl: `${APP_URL}/splash.png`,
+      splashImageUrl: `${APP_URL}/splash.svg`,
       splashBackgroundColor: "#667eea",
       webhookUrl: `${APP_URL}/api/webhook`
     }
