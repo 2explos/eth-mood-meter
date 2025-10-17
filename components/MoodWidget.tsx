@@ -6,6 +6,17 @@ import { useFarcasterContext } from '@/hooks/useFarcasterContext';
 import { fetchTodayCounts, submitVote } from '@/lib/contract';
 import { calculatePercentage, formatNumber } from '@/lib/utils';
 
+// Déclare window.sdk pour éviter l'import du SDK non publié
+declare global {
+  interface Window {
+    sdk?: {
+      actions?: {
+        ready?: () => void;
+      };
+    };
+  }
+}
+
 export const MoodWidget: React.FC = () => {
   const [bullishCount, setBullishCount] = useState<bigint>(BigInt(0));
   const [bearishCount, setBearishCount] = useState<bigint>(BigInt(0));
@@ -15,6 +26,18 @@ export const MoodWidget: React.FC = () => {
   const [hasVoted, setHasVoted] = useState(false);
 
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
+
+  // 🔹 Indique à Warpcast que la mini-app est prête
+  useEffect(() => {
+    const inWarpcast = typeof window !== 'undefined' && window.self !== window.top;
+    if (inWarpcast) {
+      try {
+        window.sdk?.actions?.ready?.();
+      } catch {
+        // ignore si hors Warpcast
+      }
+    }
+  }, []);
 
   // Récupère les compteurs on-chain
   const updateCounts = async () => {
@@ -51,7 +74,6 @@ export const MoodWidget: React.FC = () => {
     setLoading(true);
 
     try {
-      // ✅ Vérif SSR + présence wallet + cast TS safe
       if (typeof window === 'undefined' || !(window as any).ethereum) {
         throw new Error('Veuillez installer MetaMask (ou un wallet Web3 compatible)');
       }
@@ -60,27 +82,21 @@ export const MoodWidget: React.FC = () => {
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
 
-      // Vérif du réseau
       const network = await provider.getNetwork();
       const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '8453');
       if (Number(network.chainId) !== expectedChainId) {
         throw new Error(`Veuillez passer sur le réseau Base (Chain ID : ${expectedChainId})`);
       }
 
-      // Envoi de la tx de vote
       const tx = await submitVote(fid, mood, signer);
       showToast('Transaction envoyée ! Attente de confirmation…', 'success');
-
       await tx.wait();
 
-      // Marque comme voté pour aujourd’hui
       const today = new Date().toDateString();
       localStorage.setItem('lastVoteDate', today);
       setHasVoted(true);
 
       showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré ! 🎉`, 'success');
-
-      // Rafraîchit les compteurs
       updateCounts();
     } catch (error: any) {
       console.error('Vote error:', error);
@@ -177,30 +193,3 @@ export const MoodWidget: React.FC = () => {
     </div>
   );
 };
-'use client';
-
-import React, { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
-import { sdk } from '@farcaster/mini-apps-sdk'; // ← add this import
-// ... your other imports
-
-export const MoodWidget: React.FC = () => {
-  // 🔹 Tell Warpcast “I’m ready” so the splash disappears
-  useEffect(() => {
-    try {
-      // Only call inside Warpcast (in iframe)
-      const inWarpcast = typeof window !== 'undefined' && window.self !== window.top;
-      if (inWarpcast && sdk?.actions?.ready) {
-        sdk.actions.ready();
-        // Optional cosmetics:
-        // sdk.actions.setTitle('ETH Mood Meter');
-        // sdk.actions.updateStatusBar({ color: '#667eea' });
-      }
-    } catch (e) {
-      // no-op if outside Warpcast
-    }
-  }, []);
-
-  // …rest of your component (unchanged)
-};
-
