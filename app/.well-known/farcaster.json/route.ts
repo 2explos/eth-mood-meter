@@ -3,33 +3,32 @@ import { NextResponse } from "next/server";
 export async function GET() {
   const APP_URL = process.env.NEXT_PUBLIC_URL || "https://eth-mood-meter.vercel.app";
 
-  // Manifest "frame" requis pour une mini-app Farcaster
   const frame = {
     version: "1",
     name: "ETH Mood Meter",
-    iconUrl: `${APP_URL}/icon.png`,        // ← change en .svg si besoin
+    iconUrl: `${APP_URL}/icon.png`,
     homeUrl: `${APP_URL}`,
-    imageUrl: `${APP_URL}/preview.png`,    // ← change en .svg si besoin
+    imageUrl: `${APP_URL}/preview.png`,
     screenshotUrls: [`${APP_URL}/preview.png`],
     tags: ["base", "farcaster", "miniapp", "mood", "ethereum"],
     primaryCategory: "developer-tools",
     buttonTitle: "Open",
-    splashImageUrl: `${APP_URL}/splash.png`, // ← change en .svg si besoin
+    splashImageUrl: `${APP_URL}/splash.png`,
     splashBackgroundColor: "#667eea",
   };
 
-  // On ajoute accountAssociation uniquement si tu as mis les 3 env côté Vercel
   const manifest: any = { frame };
-  if (
-    process.env.FARCASTER_HEADER &&
-    process.env.FARCASTER_PAYLOAD &&
-    process.env.FARCASTER_SIGNATURE
-  ) {
-    manifest.accountAssociation = {
-      header: process.env.FARCASTER_HEADER,
-      payload: process.env.FARCASTER_PAYLOAD,
-      signature: process.env.FARCASTER_SIGNATURE,
-    };
+
+  // ✅ Ajoute accountAssociation si les 3 variables existent
+  const h = process.env.FARCASTER_HEADER;
+  const p = process.env.FARCASTER_PAYLOAD;
+  const s = process.env.FARCASTER_SIGNATURE;
+
+  if (h && p && s) {
+    manifest.accountAssociation = { header: h, payload: p, signature: s };
+  } else {
+    // Optionnel: aide au debug
+    console.warn("Farcaster accountAssociation not set: missing env vars.");
   }
 
   return NextResponse.json(manifest, {
