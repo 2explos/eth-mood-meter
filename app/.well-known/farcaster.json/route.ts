@@ -1,40 +1,41 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server'
+export const dynamic = 'force-static'
 
 export async function GET() {
-  const APP_URL = process.env.NEXT_PUBLIC_URL || "";
+  const APP_URL = process.env.NEXT_PUBLIC_URL // e.g. https://eth-mood-meter.vercel.app
+  const HEADER = process.env.FARCASTER_HEADER
+  const PAYLOAD = process.env.FARCASTER_PAYLOAD
+  const SIGNATURE = process.env.FARCASTER_SIGNATURE
 
-  // Récupère les 3 valeurs signées depuis Vercel
-  const header = process.env.FARCASTER_HEADER;
-  const payload = process.env.FARCASTER_PAYLOAD;
-  const signature = process.env.FARCASTER_SIGNATURE;
+  if (!APP_URL) {
+    return NextResponse.json({ error: 'NEXT_PUBLIC_URL is not set' }, { status: 500 })
+  }
 
-  // Manifeste de base (frame)
-  const manifest: any = {
+  const manifest = {
+    accountAssociation: {
+      header: HEADER ?? '',
+      payload: PAYLOAD ?? '',
+      signature: SIGNATURE ?? '',
+    },
     frame: {
-      version: "1",
-      name: "ETH Mood Meter",
+      version: '1',
+      name: 'ETH Mood Meter',
       iconUrl: `${APP_URL}/icon.png`,
       homeUrl: `${APP_URL}`,
       imageUrl: `${APP_URL}/preview.png`,
       screenshotUrls: [`${APP_URL}/preview.png`],
-      tags: ["base", "farcaster", "miniapp", "mood", "ethereum"],
-      primaryCategory: "developer-tools",
-      buttonTitle: "Open",
+      tags: ['base', 'farcaster', 'miniapp', 'mood', 'ethereum'],
+      primaryCategory: 'developer-tools',
+      buttonTitle: 'Open',
       splashImageUrl: `${APP_URL}/splash.png`,
-      splashBackgroundColor: "#667eea",
+      splashBackgroundColor: '#667eea',
     },
-  };
-
-  // Ajoute accountAssociation **uniquement si** les 3 variables existent
-  if (header && payload && signature) {
-    manifest.accountAssociation = { header, payload, signature };
   }
 
-  // Désactive le cache pour voir tout de suite les maj
   return NextResponse.json(manifest, {
     headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store, max-age=0",
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=3600',
     },
-  });
+  })
 }
