@@ -1,46 +1,41 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
 export async function GET() {
-  // Get base URL from environment variable
-  const APP_URL = process.env.NEXT_PUBLIC_URL;
+  const APP_URL = process.env.NEXT_PUBLIC_URL || "https://eth-mood-meter.vercel.app";
 
-  if (!APP_URL) {
-    console.error('NEXT_PUBLIC_URL environment variable is not set');
-    return NextResponse.json(
-      { error: 'Application URL not configured' },
-      { status: 500 }
-    );
-  }
-
-  // Farcaster miniapp manifest
-  const manifest = {
-    accountAssociation: {
-      // These need to be generated using Farcaster account association protocol
-      // See README for instructions on generating these values
-      header: "REPLACE_WITH_YOUR_HEADER",
-      payload: "REPLACE_WITH_YOUR_PAYLOAD",
-      signature: "REPLACE_WITH_YOUR_SIGNATURE",
-    },
-    frame: {
-      version: "1",
-      name: "ETH Mood Meter",
-      iconUrl: `${APP_URL}/icon.svg`,
-      homeUrl: `${APP_URL}`,
-      imageUrl: `${APP_URL}/preview.svg`,
-      screenshotUrls: [],
-      tags: ["base", "farcaster", "miniapp", "mood", "ethereum"],
-      primaryCategory: "developer-tools",
-      buttonTitle: "Open",
-      splashImageUrl: `${APP_URL}/splash.svg`,
-      splashBackgroundColor: "#667eea",
-      webhookUrl: `${APP_URL}/api/webhook`
-    }
+  // Manifest "frame" requis pour une mini-app Farcaster
+  const frame = {
+    version: "1",
+    name: "ETH Mood Meter",
+    iconUrl: `${APP_URL}/icon.png`,        // ← change en .svg si besoin
+    homeUrl: `${APP_URL}`,
+    imageUrl: `${APP_URL}/preview.png`,    // ← change en .svg si besoin
+    screenshotUrls: [`${APP_URL}/preview.png`],
+    tags: ["base", "farcaster", "miniapp", "mood", "ethereum"],
+    primaryCategory: "developer-tools",
+    buttonTitle: "Open",
+    splashImageUrl: `${APP_URL}/splash.png`, // ← change en .svg si besoin
+    splashBackgroundColor: "#667eea",
   };
+
+  // On ajoute accountAssociation uniquement si tu as mis les 3 env côté Vercel
+  const manifest: any = { frame };
+  if (
+    process.env.FARCASTER_HEADER &&
+    process.env.FARCASTER_PAYLOAD &&
+    process.env.FARCASTER_SIGNATURE
+  ) {
+    manifest.accountAssociation = {
+      header: process.env.FARCASTER_HEADER,
+      payload: process.env.FARCASTER_PAYLOAD,
+      signature: process.env.FARCASTER_SIGNATURE,
+    };
+  }
 
   return NextResponse.json(manifest, {
     headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=3600',
+      "Content-Type": "application/json",
+      "Cache-Control": "public, max-age=3600",
     },
   });
 }
