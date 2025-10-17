@@ -13,10 +13,10 @@ export const MoodWidget: React.FC = () => {
   const [manualFid, setManualFid] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
-  
+
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
 
-  // Fetch counts from contract
+  // Récupère les compteurs on-chain
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
@@ -27,14 +27,14 @@ export const MoodWidget: React.FC = () => {
     }
   };
 
-  // Poll every 10 seconds
+  // Rafraîchit toutes les 10s
   useEffect(() => {
     updateCounts();
     const interval = setInterval(updateCounts, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Check if user already voted today
+  // Vérifie si l’utilisateur a déjà voté aujourd’hui (LocalStorage)
   useEffect(() => {
     const today = new Date().toDateString();
     const lastVote = localStorage.getItem('lastVoteDate');
@@ -43,50 +43,48 @@ export const MoodWidget: React.FC = () => {
 
   const handleVote = async (mood: 0 | 1) => {
     const fid = contextFid || parseInt(manualFid);
-    
     if (!fid || isNaN(fid)) {
-      showToast('Please enter a valid Farcaster ID', 'error');
+      showToast('Veuillez entrer un FID Farcaster valide', 'error');
       return;
     }
 
     setLoading(true);
-    
+
     try {
-      // Request wallet connection
-      if (typeof window.ethereum === 'undefined') {
-        throw new Error('Please install MetaMask or another Web3 wallet');
+      // ✅ Vérif SSR + présence wallet + cast TS safe
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('Veuillez installer MetaMask (ou un wallet Web3 compatible)');
       }
 
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
 
-      // Check network
+      // Vérif du réseau
       const network = await provider.getNetwork();
       const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '8453');
-      
       if (Number(network.chainId) !== expectedChainId) {
-        throw new Error(`Please switch to Base network (Chain ID: ${expectedChainId})`);
+        throw new Error(`Veuillez passer sur le réseau Base (Chain ID : ${expectedChainId})`);
       }
 
-      // Submit vote
+      // Envoi de la tx de vote
       const tx = await submitVote(fid, mood, signer);
-      showToast('Transaction submitted! Waiting for confirmation...', 'success');
-      
+      showToast('Transaction envoyée ! Attente de confirmation…', 'success');
+
       await tx.wait();
-      
-      // Mark as voted
+
+      // Marque comme voté pour aujourd’hui
       const today = new Date().toDateString();
       localStorage.setItem('lastVoteDate', today);
       setHasVoted(true);
-      
-      showToast(`Successfully voted ${mood === 1 ? 'Bullish' : 'Bearish'}! 🎉`, 'success');
-      
-      // Refresh counts
+
+      showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré ! 🎉`, 'success');
+
+      // Rafraîchit les compteurs
       updateCounts();
     } catch (error: any) {
       console.error('Vote error:', error);
-      showToast(error.message || 'Transaction failed', 'error');
+      showToast(error?.message || 'Échec de la transaction', 'error');
     } finally {
       setLoading(false);
     }
@@ -105,21 +103,21 @@ export const MoodWidget: React.FC = () => {
     <div className="mood-widget">
       <div className="card">
         <h1 className="title">🐂 ETH Mood Meter 🐻</h1>
-        
+
         {!isInWarpcast && (
           <div className="banner">
-            ℹ️ You can use this as a Farcaster mini-app. Voting works on Base.
+            ℹ️ Utilisable comme mini-app Farcaster. Les votes fonctionnent sur Base.
           </div>
         )}
 
         {!contextFid && (
           <div className="fid-input">
-            <label>Farcaster ID (FID):</label>
+            <label>Farcaster ID (FID) :</label>
             <input
               type="number"
               value={manualFid}
               onChange={(e) => setManualFid(e.target.value)}
-              placeholder="Enter your FID"
+              placeholder="Entrez votre FID"
               disabled={loading || hasVoted}
             />
           </div>
@@ -133,7 +131,7 @@ export const MoodWidget: React.FC = () => {
           >
             {loading ? '⏳' : '🚀'} Bullish
           </button>
-          
+
           <button
             onClick={() => handleVote(0)}
             disabled={loading || hasVoted}
@@ -145,13 +143,13 @@ export const MoodWidget: React.FC = () => {
 
         {hasVoted && (
           <div className="voted-message">
-            ✅ You've already voted today! Come back tomorrow.
+            ✅ Vous avez déjà voté aujourd’hui. Revenez demain !
           </div>
         )}
 
         <div className="stats">
-          <h3>Today's Sentiment</h3>
-          
+          <h3>Sentiment du jour</h3>
+
           <div className="counts">
             <div className="count-item">
               <span className="count-label">Bullish</span>
@@ -164,14 +162,8 @@ export const MoodWidget: React.FC = () => {
           </div>
 
           <div className="progress-bar">
-            <div 
-              className="progress-bullish"
-              style={{ width: `${bullishPercent}%` }}
-            />
-            <div 
-              className="progress-bearish"
-              style={{ width: `${bearishPercent}%` }}
-            />
+            <div className="progress-bullish" style={{ width: `${bullishPercent}%` }} />
+            <div className="progress-bearish" style={{ width: `${bearishPercent}%` }} />
           </div>
 
           <div className="percentages">
@@ -180,11 +172,7 @@ export const MoodWidget: React.FC = () => {
           </div>
         </div>
 
-        {toast && (
-          <div className={`toast toast-${toast.type}`}>
-            {toast.message}
-          </div>
-        )}
+        {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}
       </div>
     </div>
   );
