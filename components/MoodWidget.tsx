@@ -177,3 +177,30 @@ export const MoodWidget: React.FC = () => {
     </div>
   );
 };
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import { sdk } from '@farcaster/mini-apps-sdk'; // ← add this import
+// ... your other imports
+
+export const MoodWidget: React.FC = () => {
+  // 🔹 Tell Warpcast “I’m ready” so the splash disappears
+  useEffect(() => {
+    try {
+      // Only call inside Warpcast (in iframe)
+      const inWarpcast = typeof window !== 'undefined' && window.self !== window.top;
+      if (inWarpcast && sdk?.actions?.ready) {
+        sdk.actions.ready();
+        // Optional cosmetics:
+        // sdk.actions.setTitle('ETH Mood Meter');
+        // sdk.actions.updateStatusBar({ color: '#667eea' });
+      }
+    } catch (e) {
+      // no-op if outside Warpcast
+    }
+  }, []);
+
+  // …rest of your component (unchanged)
+};
+
