@@ -26,14 +26,14 @@ export async function GET(req: Request) {
     frame: {
       version: '1',
       name: 'ETH Mood Meter',
-      iconUrl: `${origin}/icon.png`,
+      iconUrl: `${origin}/icon.svg`,
       homeUrl: `${origin}`,
-      imageUrl: `${origin}/preview.png`,
-      screenshotUrls: [`${origin}/preview.png`],
+      imageUrl: `${origin}/preview.svg`,
+      screenshotUrls: [`${origin}/preview.svg`],
       tags: ['base', 'farcaster', 'miniapp', 'mood', 'ethereum'],
       primaryCategory: 'developer-tools',
       buttonTitle: 'Open',
-      splashImageUrl: `${origin}/splash.png`,
+      splashImageUrl: `${origin}/splash.svg`,
       splashBackgroundColor: '#667eea',
     },
   }
