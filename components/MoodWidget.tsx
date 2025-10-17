@@ -28,16 +28,21 @@ export const MoodWidget: React.FC = () => {
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
 
   // 🔹 Indique à Warpcast que la mini-app est prête
-  useEffect(() => {
-    const inWarpcast = typeof window !== 'undefined' && window.self !== window.top;
-    if (inWarpcast) {
-      try {
-        window.sdk?.actions?.ready?.();
-      } catch {
-        // ignore si hors Warpcast
-      }
-    }
-  }, []);
+ useEffect(() => {
+  if (typeof window === 'undefined') return;
+
+  // Petit log pour vérifier dans la console de Warpcast
+  console.log('➡️ Checking Warpcast SDK:', window.sdk);
+
+  const inWarpcast = window.self !== window.top;
+  if (inWarpcast && window.sdk?.actions?.ready) {
+    console.log('✅ Calling sdk.actions.ready()');
+    window.sdk.actions.ready();
+  } else {
+    console.warn('⚠️ Not in Warpcast or SDK not found');
+  }
+}, []); // 👈 garde le tableau vide ici
+
 
   // Récupère les compteurs on-chain
   const updateCounts = async () => {
