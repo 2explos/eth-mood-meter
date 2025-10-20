@@ -29,7 +29,7 @@ export const MoodWidget: React.FC = () => {
 
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
 
-  // Ready -> Warpcast
+  // 1) Signaler "ready" à Warpcast
   const readyCalled = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -38,14 +38,11 @@ export const MoodWidget: React.FC = () => {
 
     const tryReady = () => {
       if (readyCalled.current) return;
-
-      // 1) SDK officiel s'il existe
       if (window.sdk?.actions?.ready) {
         window.sdk.actions.ready();
         readyCalled.current = true;
         return;
       }
-      // 2) Fallback postMessage
       try {
         if (window.parent && window.parent !== window) {
           window.parent.postMessage({ type: 'warpcast:ready' }, '*');
@@ -77,7 +74,7 @@ export const MoodWidget: React.FC = () => {
     };
   }, []);
 
-  // Compteurs
+  // 2) Compteurs
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
@@ -89,18 +86,18 @@ export const MoodWidget: React.FC = () => {
   };
   useEffect(() => {
     updateCounts();
-    const interval = setInterval(updateCounts, 10_000);
+    const interval = setInterval(updateCounts, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Déjà voté ?
+  // 3) Déjà voté aujourd’hui ?
   useEffect(() => {
     const today = new Date().toDateString();
     const last = localStorage.getItem('lastVoteDate');
     setHasVoted(last === today);
   }, []);
 
-  // Vote
+  // 4) Vote
   const handleVote = async (mood: 0 | 1) => {
     const fid = contextFid || parseInt(manualFid);
     if (!fid || isNaN(fid)) {
@@ -129,7 +126,7 @@ export const MoodWidget: React.FC = () => {
       const today = new Date().toDateString();
       localStorage.setItem('lastVoteDate', today);
       setHasVoted(true);
-      showToast(\`Vote \${mood === 1 ? 'Bullish' : 'Bearish'} enregistré ! 🎉\`, 'success');
+      showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré ! 🎉`, 'success');
       updateCounts();
     } catch (e: any) {
       console.error(e);
@@ -184,12 +181,18 @@ export const MoodWidget: React.FC = () => {
         <div className="stats">
           <h3>Sentiment du jour</h3>
           <div className="counts">
-            <div className="count-item"><span className="count-label">Bullish</span><span className="count-value">{formatNumber(Number(bullishCount))}</span></div>
-            <div className="count-item"><span className="count-label">Bearish</span><span className="count-value">{formatNumber(Number(bearishCount))}</span></div>
+            <div className="count-item">
+              <span className="count-label">Bullish</span>
+              <span className="count-value">{formatNumber(Number(bullishCount))}</span>
+            </div>
+            <div className="count-item">
+              <span className="count-label">Bearish</span>
+              <span className="count-value">{formatNumber(Number(bearishCount))}</span>
+            </div>
           </div>
           <div className="progress-bar">
-            <div className="progress-bullish" style={{ width: \`\${pBull}%\` }} />
-            <div className="progress-bearish" style={{ width: \`\${pBear}%\` }} />
+            <div className="progress-bullish" style={{ width: `${pBull}%` }} />
+            <div className="progress-bearish" style={{ width: `${pBear}%` }} />
           </div>
           <div className="percentages">
             <span className="bullish-text">🚀 {pBull}%</span>
@@ -197,7 +200,7 @@ export const MoodWidget: React.FC = () => {
           </div>
         </div>
 
-        {toast && <div className={\`toast toast-\${toast.type}\`}>{toast.message}</div>}
+        {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}
       </div>
     </div>
   );
