@@ -1,17 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { useFarcasterContext } from '@/hooks/useFarcasterContext';
 import { fetchTodayCounts, submitVote } from '@/lib/contract';
 import { calculatePercentage, formatNumber } from '@/lib/utils';
 
-// Déclare window.sdk pour éviter l'import du SDK non publié
+// Déclare window.sdk (SDK non publié côté npm)
 declare global {
   interface Window {
     sdk?: {
       actions?: {
         ready?: () => void;
+        setTitle?: (title: string) => void;
+        updateStatusBar?: (opts: { color?: string }) => void;
       };
     };
   }
@@ -27,24 +29,48 @@ export const MoodWidget: React.FC = () => {
 
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
 
-  // 🔹 Indique à Warpcast que la mini-app est prête
- useEffect(() => {
-  if (typeof window === 'undefined') return;
+  /** ---------- 1) Signaler “prêt” à Warpcast (robuste) ---------- */
+  const readyCalled = useRef(false);
 
-  // Petit log pour vérifier dans la console de Warpcast
-  console.log('➡️ Checking Warpcast SDK:', window.sdk);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
 
-  const inWarpcast = window.self !== window.top;
-  if (inWarpcast && window.sdk?.actions?.ready) {
-    console.log('✅ Calling sdk.actions.ready()');
-    window.sdk.actions.ready();
-  } else {
-    console.warn('⚠️ Not in Warpcast or SDK not found');
-  }
-}, []); // 👈 garde le tableau vide ici
+    const inWarpcast = window.self !== window.top;
+    if (!inWarpcast) {
+      console.warn('⚠️ Pas dans Warpcast (iframe), splash possible en dev.');
+      return;
+    }
 
+    const tryReady = () => {
+      if (readyCalled.current) return;
+      if (window.sdk?.actions?.ready) {
+        window.sdk.actions.ready();
+        // Optionnel :
+        // window.sdk.actions.setTitle?.('ETH Mood Meter');
+        // window.sdk.actions.updateStatusBar?.({ color: '#667eea' });
+        readyCalled.current = true;
+        console.log('✅ sdk.actions.ready() appelé');
+      } else {
+        console.log('⏳ SDK pas encore dispo, retry…');
+      }
+    };
 
-  // Récupère les compteurs on-chain
+    // Appel immédiat + quelques retries pour couvrir les cas lents
+    tryReady();
+    const t1 = setTimeout(tryReady, 100);
+    const t2 = setTimeout(tryReady, 500);
+    const t3 = setTimeout(tryReady, 1500);
+    window.addEventListener('load', tryReady);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      window.removeEventListener('load', tryReady);
+    };
+  }, []);
+
+  /** ---------- 2) Compteurs on-chain ---------- */
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
@@ -55,20 +81,20 @@ export const MoodWidget: React.FC = () => {
     }
   };
 
-  // Rafraîchit toutes les 10s
   useEffect(() => {
     updateCounts();
     const interval = setInterval(updateCounts, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Vérifie si l’utilisateur a déjà voté aujourd’hui (LocalStorage)
+  /** ---------- 3) Déjà voté aujourd’hui ? ---------- */
   useEffect(() => {
     const today = new Date().toDateString();
     const lastVote = localStorage.getItem('lastVoteDate');
     setHasVoted(lastVote === today);
   }, []);
 
+  /** ---------- 4) Vote ---------- */
   const handleVote = async (mood: 0 | 1) => {
     const fid = contextFid || parseInt(manualFid);
     if (!fid || isNaN(fid)) {
@@ -111,6 +137,7 @@ export const MoodWidget: React.FC = () => {
     }
   };
 
+  /** ---------- 5) UI ---------- */
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -153,7 +180,7 @@ export const MoodWidget: React.FC = () => {
             {loading ? '⏳' : '🚀'} Bullish
           </button>
 
-          <button
+        <button
             onClick={() => handleVote(0)}
             disabled={loading || hasVoted}
             className="btn btn-bearish"
