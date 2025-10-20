@@ -12,44 +12,63 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* Bridge Warpcast: expose window.sdk.actions.ready() et envoie un postMessage */}
-        <Script
-          id="warpcast-bridge"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `
-(function () {
-  // Si Warpcast injecte déjà sdk, on ne touche à rien
-  if (!window.sdk) {
-    window.sdk = {
-      actions: {
-        ready: function () {
-          try {
-            // On notifie le parent (Warpcast) que la mini-app est prête
-            if (window.parent && window.parent !== window) {
-              window.parent.postMessage({ type: 'warpcast:ready' }, '*');
-            }
-          } catch (e) {}
-        }
-      }
-    };
-  }
+        {/* Bridge très tôt vers Warpcast */}
+        <Script id="warpcast-bridge" strategy="afterInteractive">
+          {`
+            (function () {
+              var tried = false;
+              function sendReady() {
+                if (tried) return; 
+                tried = true;
+                try {
+                  if (window.sdk && window.sdk.actions && typeof window.sdk.actions.ready === 'function') {
+                    window.sdk.actions.ready();
+                  }
+                } catch (e) {}
 
-  // Par sécurité, si le parent "ping", on répond "ready"
-  window.addEventListener('message', function (ev) {
-    try {
-      var t = ev && ev.data && ev.data.type;
-      if (t === 'warpcast:ping' || t === 'ready?' || t === 'miniapp:ping') {
-        if (window.sdk && window.sdk.actions && typeof window.sdk.actions.ready === 'function') {
-          window.sdk.actions.ready();
-        }
-      }
-    } catch (e) {}
-  });
-})();
-            `,
-          }}
-        />
+                try {
+                  if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: 'warpcast:ready' }, '*');
+                    window.parent.postMessage({ type: 'miniapp_ready' }, '*');
+                    window.parent.postMessage({ type: 'frame:ready' }, '*');
+                  }
+                } catch (e) {}
+              }
+
+              function softTry() {
+                try {
+                  if (window.sdk && window.sdk.actions && typeof window.sdk.actions.ready === 'function') {
+                    window.sdk.actions.ready();
+                  }
+                  if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: 'warpcast:ready' }, '*');
+                  }
+                } catch (e) {}
+              }
+
+              // Appel immédiat + retries
+              softTry();
+              setTimeout(softTry, 100);
+              setTimeout(softTry, 400);
+              setTimeout(softTry, 1200);
+
+              if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                setTimeout(sendReady, 0);
+              } else {
+                window.addEventListener('DOMContentLoaded', sendReady);
+                window.addEventListener('load', sendReady);
+              }
+
+              // Si le parent nous "ping", on répond
+              window.addEventListener('message', function (ev) {
+                var t = ev && ev.data && ev.data.type;
+                if (t === 'warpcast:ping' || t === 'ready?' || t === 'miniapp:ping') {
+                  softTry();
+                }
+              });
+            })();
+          `}
+        </Script>
       </head>
       <body>{children}</body>
     </html>
