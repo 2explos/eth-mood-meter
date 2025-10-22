@@ -6,7 +6,7 @@ import { useFarcasterContext } from '@/hooks/useFarcasterContext';
 import { fetchTodayCounts, submitVote } from '@/lib/contract';
 import { calculatePercentage, formatNumber } from '@/lib/utils';
 
-// ⚠️ Do NOT declare `ethereum` here (it collides with other libs)
+// ❗ Ne pas typer window.ethereum globalement (risque de collision TS)
 declare global {
   interface Window {
     sdk?: {
@@ -30,35 +30,43 @@ export const MoodWidget: React.FC = () => {
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
   const readyCalled = useRef(false);
 
-  // 1) Ping Warpcast SDK (safe retries)
+  /* ------------------------------------------------------------------ *
+   * 1) Appeler sdk.actions.ready() de manière FORCÉE + retries (jusqu'à 8s)
+   * ------------------------------------------------------------------ */
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const inWarpcast = window.self !== window.top;
-    if (!inWarpcast) return;
 
+    const startedAt = Date.now();
     const tryReady = () => {
       if (readyCalled.current) return;
-      if (window.sdk?.actions?.ready) {
-        window.sdk.actions.ready();
-        window.sdk.actions.setTitle?.('ETH Mood Meter');
-        window.sdk.actions.updateStatusBar?.({ color: '#667eea' });
+
+      const sdk = (window as any)?.sdk;
+      if (sdk?.actions?.ready) {
+        sdk.actions.ready();
+        sdk.actions.setTitle?.('ETH Mood Meter');
+        sdk.actions.updateStatusBar?.({ color: '#667eea' });
         readyCalled.current = true;
         console.log('✅ Warpcast SDK ready() called');
+        return;
+      }
+
+      // si le SDK n'est pas encore injecté, on retente pendant 8 secondes
+      if (Date.now() - startedAt < 8000) {
+        setTimeout(tryReady, 250);
+      } else {
+        console.warn('⚠️ Warpcast SDK introuvable après 8s (ready non appelé).');
       }
     };
 
+    // Appel immédiat + à l’événement "load"
     tryReady();
-    const interval = setInterval(tryReady, 500);
-    const killer = setTimeout(() => clearInterval(interval), 5000);
     window.addEventListener('load', tryReady);
-    return () => {
-      clearInterval(interval);
-      clearTimeout(killer);
-      window.removeEventListener('load', tryReady);
-    };
+    return () => window.removeEventListener('load', tryReady);
   }, []);
 
-  // 2) Read on-chain counts
+  /* ------------------------------------------------------------------ *
+   * 2) Récupération des compteurs on-chain
+   * ------------------------------------------------------------------ */
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
@@ -75,14 +83,18 @@ export const MoodWidget: React.FC = () => {
     return () => clearInterval(id);
   }, []);
 
-  // 3) Check “already voted today”
+  /* ------------------------------------------------------------------ *
+   * 3) Déjà voté aujourd’hui ?
+   * ------------------------------------------------------------------ */
   useEffect(() => {
     const today = new Date().toDateString();
     const last = localStorage.getItem('lastVoteDate');
     setHasVoted(last === today);
   }, []);
 
-  // 4) Vote
+  /* ------------------------------------------------------------------ *
+   * 4) Envoi du vote
+   * ------------------------------------------------------------------ */
   const handleVote = async (mood: 0 | 1) => {
     const fid = contextFid || parseInt(manualFid);
     if (!fid || isNaN(fid)) {
@@ -123,7 +135,9 @@ export const MoodWidget: React.FC = () => {
     }
   };
 
-  // 5) UI helpers
+  /* ------------------------------------------------------------------ *
+   * 5) UI helpers
+   * ------------------------------------------------------------------ */
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
