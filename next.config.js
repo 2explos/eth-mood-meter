@@ -10,11 +10,17 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // Autoriser l’embed dans Warpcast
+        source: '/:path*',
         headers: [
-          // Autoriser Warpcast à intégrer ton app en iframe
+          // Vercel n’en met pas par défaut, mais on force au cas où
           { key: 'X-Frame-Options', value: 'ALLOWALL' },
-          { key: 'Content-Security-Policy', value: "frame-ancestors *" },
+          // CSP moderne pour l’embed
+          {
+            key: 'Content-Security-Policy',
+            value:
+              "frame-ancestors https://warpcast.com https://*.warpcast.com https://*.farcaster.xyz;",
+          },
         ],
       },
     ];
