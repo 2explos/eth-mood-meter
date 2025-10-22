@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { useFarcasterContext } from '@/hooks/useFarcasterContext';
 import { fetchTodayCounts, submitVote } from '@/lib/contract';
 import { calculatePercentage, formatNumber } from '@/lib/utils';
 
+// Déclare le SDK Warpcast global
 declare global {
   interface Window {
     sdk?: {
@@ -15,66 +16,64 @@ declare global {
         updateStatusBar?: (opts: { color?: string }) => void;
       };
     };
+    ethereum?: any;
   }
 }
 
 export const MoodWidget: React.FC = () => {
-  const [bullishCount, setBullishCount] = useState<bigint>(0n);
-  const [bearishCount, setBearishCount] = useState<bigint>(0n);
+  const [bullishCount, setBullishCount] = useState<bigint>(BigInt(0));
+  const [bearishCount, setBearishCount] = useState<bigint>(BigInt(0));
   const [loading, setLoading] = useState(false);
   const [manualFid, setManualFid] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
 
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
-
-  /** ---------- ✅ Signaler “ready” à Warpcast ---------- **/
   const readyCalled = useRef(false);
 
+  /** ---------- 1) ✅ Appeler sdk.actions.ready() quand dispo ---------- */
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const inWarpcast = window.self !== window.top;
     if (!inWarpcast) {
-      console.log('🧭 Not in Warpcast iframe → skip ready()');
+      console.warn('⚠️ Pas dans Warpcast (iframe)');
       return;
     }
 
     const tryReady = () => {
       if (readyCalled.current) return;
-
-      const sdk = (window as any).sdk;
-      if (sdk?.actions?.ready) {
-        sdk.actions.ready();
-        sdk.actions.setTitle?.('ETH Mood Meter');
-        sdk.actions.updateStatusBar?.({ color: '#667eea' });
+      if (window.sdk?.actions?.ready) {
+        window.sdk.actions.ready();
+        window.sdk.actions.setTitle?.('ETH Mood Meter');
+        window.sdk.actions.updateStatusBar?.({ color: '#667eea' });
         readyCalled.current = true;
-        console.log('✅ Warpcast ready() called successfully');
+        console.log('✅ Warpcast SDK ready() called successfully');
       } else {
-        console.log('⏳ Warpcast SDK not ready yet...');
+        console.log('⏳ SDK pas encore dispo, retry...');
       }
     };
 
-    // Essaye plusieurs fois
+    // Appel immédiat + retries pour garantir la dispo du SDK
     tryReady();
-    const retries = [100, 300, 1000, 2000];
-    const timers = retries.map((d) => setTimeout(tryReady, d));
+    const interval = setInterval(tryReady, 500);
+    setTimeout(() => clearInterval(interval), 5000);
 
     window.addEventListener('load', tryReady);
     return () => {
-      timers.forEach(clearTimeout);
       window.removeEventListener('load', tryReady);
+      clearInterval(interval);
     };
   }, []);
 
-  /** ---------- Compteurs on-chain ---------- **/
+  /** ---------- 2) Charger les compteurs ---------- */
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
       setBullishCount(data.bullish);
       setBearishCount(data.bearish);
-    } catch (err) {
-      console.error('Failed to fetch counts:', err);
+    } catch (error) {
+      console.error('Failed to fetch counts:', error);
     }
   };
 
@@ -84,56 +83,55 @@ export const MoodWidget: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  /** ---------- Déjà voté aujourd’hui ? ---------- **/
+  /** ---------- 3) Vérifier si déjà voté ---------- */
   useEffect(() => {
     const today = new Date().toDateString();
-    const lastVote = typeof window !== 'undefined' ? localStorage.getItem('lastVoteDate') : null;
+    const lastVote = localStorage.getItem('lastVoteDate');
     setHasVoted(lastVote === today);
   }, []);
 
-  /** ---------- Vote ---------- **/
+  /** ---------- 4) Gérer le vote ---------- */
   const handleVote = async (mood: 0 | 1) => {
-    const fid = contextFid || parseInt(manualFid, 10);
-    if (!fid || Number.isNaN(fid)) {
+    const fid = contextFid || parseInt(manualFid);
+    if (!fid || isNaN(fid)) {
       showToast('Veuillez entrer un FID Farcaster valide', 'error');
       return;
     }
 
     setLoading(true);
-    try {
-      if (typeof window === 'undefined' || !(window as any).ethereum) {
-        throw new Error('Veuillez installer MetaMask (ou un wallet Web3 compatible)');
-      }
 
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
+    try {
+      if (!window.ethereum) throw new Error('Wallet non détecté');
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
 
       const network = await provider.getNetwork();
-      const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '8453', 10);
+      const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '8453');
       if (Number(network.chainId) !== expectedChainId) {
         throw new Error(`Veuillez passer sur le réseau Base (Chain ID : ${expectedChainId})`);
       }
 
       const tx = await submitVote(fid, mood, signer);
-      showToast('Transaction envoyée ! Attente de confirmation...', 'success');
+      showToast('Transaction envoyée ! Attente de confirmation…', 'success');
       await tx.wait();
 
       const today = new Date().toDateString();
       localStorage.setItem('lastVoteDate', today);
       setHasVoted(true);
 
-      showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré ! 🎉`, 'success');
+      showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré 🎉`, 'success');
       updateCounts();
-    } catch (err: any) {
-      console.error('Vote error:', err);
-      showToast(err?.message || 'Échec de la transaction', 'error');
+    } catch (error: any) {
+      console.error('Vote error:', error);
+      showToast(error?.message || 'Erreur pendant le vote', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  /** ---------- UI ---------- **/
+  /** ---------- 5) UI + helpers ---------- */
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -185,7 +183,11 @@ export const MoodWidget: React.FC = () => {
           </button>
         </div>
 
-        {hasVoted && <div className="voted-message">✅ Vous avez déjà voté aujourd’hui. Revenez demain !</div>}
+        {hasVoted && (
+          <div className="voted-message">
+            ✅ Vous avez déjà voté aujourd’hui. Revenez demain !
+          </div>
+        )}
 
         <div className="stats">
           <h3>Sentiment du jour</h3>
