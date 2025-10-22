@@ -4,91 +4,102 @@ import { useEffect, useRef } from 'react';
 
 /**
  * WarpcastReady
- * - Tente d'appeler sdk.actions.ready() dès que dispo (pendant ~10s).
- * - Si le SDK n’est pas injecté (cas fréquent dans le Preview Tool),
- *   clique automatiquement sur “Hide splash screen for now”.
+ * - tente sdk.actions.ready() en boucle (~12s)
+ * - envoie des postMessage de compatibilité
+ * - auto-clique "Hide splash screen for now" si présent
+ * - logge en console pour debug
  */
 export default function WarpcastReady() {
-  const readyCalled = useRef(false);
-  const hideClicked = useRef(false);
+  const done = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const start = Date.now();
-    const MAX_MS = 10_000;     // on essaie ~10s
-    const STEP_MS = 300;       // intervalle de retry
 
-    const tryReady = (from: string) => {
-      if (readyCalled.current) return;
+    const log = (...args: any[]) => {
+      // aide au debug dans la console du Preview Tool
+      try { console.log('[WarpcastReady]', ...args); } catch {}
+    };
 
+    const callReadyIfPossible = (source: string) => {
+      if (done.current) return;
       const sdk: any = (window as any)?.sdk;
       if (sdk?.actions?.ready) {
         try {
           sdk.actions.ready();
           sdk.actions.setTitle?.('ETH Mood Meter');
           sdk.actions.updateStatusBar?.({ color: '#667eea' });
-          readyCalled.current = true;
-          // eslint-disable-next-line no-console
-          console.log('✅ sdk.actions.ready() via', from);
+          done.current = true;
+          log(`✅ ready() OK via ${source}`);
           return true;
         } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn('ready() threw:', e);
+          log(`ready() threw via ${source}`, e);
         }
       }
       return false;
     };
 
-    /** Cache la splash du Preview Tool si le SDK n’est pas dispo */
+    const nudgeParent = () => {
+      try {
+        window.parent?.postMessage?.({ type: 'warpcast:ready' }, '*');
+        window.parent?.postMessage?.({ type: 'frame_ready' }, '*');
+        window.parent?.postMessage?.({ target: 'warpcast', action: 'ready' }, '*');
+      } catch {}
+    };
+
+    // 🔨 auto-clique "Hide splash screen for now"
     const autoHideSplash = () => {
-      if (hideClicked.current) return;
-      const btns = Array.from(document.querySelectorAll('button,a'));
-      const hide = btns.find(b =>
-        b.textContent?.toLowerCase().includes('hide splash')
-      ) as HTMLButtonElement | HTMLAnchorElement | undefined;
+      if (done.current) return;
+      try {
+        const all = Array.from(document.querySelectorAll<HTMLElement>('*'));
+        const btn = all.find((el) => {
+          const t = el.innerText?.trim()?.toLowerCase?.() || '';
+          return t.includes('hide splash') || t.includes('masquer l’écran de démarrage');
+        }) as HTMLButtonElement | undefined;
 
-      if (hide) {
-        hideClicked.current = true;
-        // eslint-disable-next-line no-console
-        console.log('🔕 Auto-click “Hide splash screen for now”');
-        hide.click();
-      }
+        if (btn) {
+          btn.click();
+          log('🔕 Auto-click sur "Hide splash…"');
+        }
+      } catch {}
     };
 
+    // 1) Appels immédiats + rAF + load
+    callReadyIfPossible('immediate');
+    requestAnimationFrame(() => callReadyIfPossible('raf'));
+    window.addEventListener('load', () => callReadyIfPossible('load'), { once: true });
+
+    // 2) boucle de retries (toutes les 300ms) pendant 12s
     const tick = () => {
-      if (!readyCalled.current) {
-        const ok = tryReady('tick');
-        if (!ok) autoHideSplash();
-      }
-      if (!readyCalled.current && Date.now() - start < MAX_MS) {
-        setTimeout(tick, STEP_MS);
-      } else if (!readyCalled.current) {
-        // eslint-disable-next-line no-console
-        console.warn('⚠️ SDK non détecté après 10s (mode preview probable).');
+      if (done.current) return;
+      const ok = callReadyIfPossible('retry');
+      autoHideSplash();
+      nudgeParent();
+
+      if (!ok && Date.now() - start < 12000) {
+        setTimeout(tick, 300);
+      } else if (!done.current) {
+        log('⚠️ SDK non détecté après ~12s. La splash peut rester en Preview Tool, mais en Warpcast réel ça passe souvent.');
       }
     };
+    const timer = setTimeout(tick, 300);
 
-    // premiers essais
-    tryReady('immediate') || autoHideSplash();
+    // 3) petits triggers utiles
+    const onVis = () => callReadyIfPossible('visibilitychange');
+    const onFocus = () => callReadyIfPossible('focus');
+    const onMsg = () => callReadyIfPossible('message');
 
-    // écouteurs utiles
-    const onLoad = () => tryReady('load') || autoHideSplash();
-    const onVis = () => tryReady('visibilitychange') || autoHideSplash();
-    const onFocus = () => tryReady('focus') || autoHideSplash();
-    const onMsg = () => tryReady('message') || autoHideSplash();
-
-    window.addEventListener('load', onLoad);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onFocus);
     window.addEventListener('message', onMsg);
 
-    // boucle de retry
-    const t0 = setTimeout(tick, STEP_MS);
+    // 4) re-scan de la splash régulièrement (si elle revient)
+    const splashInterval = setInterval(autoHideSplash, 500);
 
     return () => {
-      clearTimeout(t0);
-      window.removeEventListener('load', onLoad);
+      clearTimeout(timer);
+      clearInterval(splashInterval);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('message', onMsg);
