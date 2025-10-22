@@ -6,7 +6,7 @@ import { useFarcasterContext } from '@/hooks/useFarcasterContext';
 import { fetchTodayCounts, submitVote } from '@/lib/contract';
 import { calculatePercentage, formatNumber } from '@/lib/utils';
 
-// Déclare le SDK Warpcast global
+// ⚠️ Do NOT declare `ethereum` here (it collides with other libs)
 declare global {
   interface Window {
     sdk?: {
@@ -16,7 +16,6 @@ declare global {
         updateStatusBar?: (opts: { color?: string }) => void;
       };
     };
-    ethereum?: any;
   }
 }
 
@@ -31,15 +30,11 @@ export const MoodWidget: React.FC = () => {
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
   const readyCalled = useRef(false);
 
-  /** ---------- 1) ✅ Appeler sdk.actions.ready() quand dispo ---------- */
+  // 1) Ping Warpcast SDK (safe retries)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const inWarpcast = window.self !== window.top;
-    if (!inWarpcast) {
-      console.warn('⚠️ Pas dans Warpcast (iframe)');
-      return;
-    }
+    if (!inWarpcast) return;
 
     const tryReady = () => {
       if (readyCalled.current) return;
@@ -48,49 +43,46 @@ export const MoodWidget: React.FC = () => {
         window.sdk.actions.setTitle?.('ETH Mood Meter');
         window.sdk.actions.updateStatusBar?.({ color: '#667eea' });
         readyCalled.current = true;
-        console.log('✅ Warpcast SDK ready() called successfully');
-      } else {
-        console.log('⏳ SDK pas encore dispo, retry...');
+        console.log('✅ Warpcast SDK ready() called');
       }
     };
 
-    // Appel immédiat + retries pour garantir la dispo du SDK
     tryReady();
     const interval = setInterval(tryReady, 500);
-    setTimeout(() => clearInterval(interval), 5000);
-
+    const killer = setTimeout(() => clearInterval(interval), 5000);
     window.addEventListener('load', tryReady);
     return () => {
-      window.removeEventListener('load', tryReady);
       clearInterval(interval);
+      clearTimeout(killer);
+      window.removeEventListener('load', tryReady);
     };
   }, []);
 
-  /** ---------- 2) Charger les compteurs ---------- */
+  // 2) Read on-chain counts
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
       setBullishCount(data.bullish);
       setBearishCount(data.bearish);
-    } catch (error) {
-      console.error('Failed to fetch counts:', error);
+    } catch (e) {
+      console.error('Failed to fetch counts:', e);
     }
   };
 
   useEffect(() => {
     updateCounts();
-    const interval = setInterval(updateCounts, 10000);
-    return () => clearInterval(interval);
+    const id = setInterval(updateCounts, 10000);
+    return () => clearInterval(id);
   }, []);
 
-  /** ---------- 3) Vérifier si déjà voté ---------- */
+  // 3) Check “already voted today”
   useEffect(() => {
     const today = new Date().toDateString();
-    const lastVote = localStorage.getItem('lastVoteDate');
-    setHasVoted(lastVote === today);
+    const last = localStorage.getItem('lastVoteDate');
+    setHasVoted(last === today);
   }, []);
 
-  /** ---------- 4) Gérer le vote ---------- */
+  // 4) Vote
   const handleVote = async (mood: 0 | 1) => {
     const fid = contextFid || parseInt(manualFid);
     if (!fid || isNaN(fid)) {
@@ -99,11 +91,11 @@ export const MoodWidget: React.FC = () => {
     }
 
     setLoading(true);
-
     try {
-      if (!window.ethereum) throw new Error('Wallet non détecté');
+      const eth = (window as any)?.ethereum;
+      if (!eth) throw new Error('Wallet non détecté');
 
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.BrowserProvider(eth);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
 
@@ -123,15 +115,15 @@ export const MoodWidget: React.FC = () => {
 
       showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré 🎉`, 'success');
       updateCounts();
-    } catch (error: any) {
-      console.error('Vote error:', error);
-      showToast(error?.message || 'Erreur pendant le vote', 'error');
+    } catch (e: any) {
+      console.error(e);
+      showToast(e?.message || 'Erreur pendant le vote', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  /** ---------- 5) UI + helpers ---------- */
+  // 5) UI helpers
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -166,32 +158,20 @@ export const MoodWidget: React.FC = () => {
         )}
 
         <div className="button-container">
-          <button
-            onClick={() => handleVote(1)}
-            disabled={loading || hasVoted}
-            className="btn btn-bullish"
-          >
+          <button onClick={() => handleVote(1)} disabled={loading || hasVoted} className="btn btn-bullish">
             {loading ? '⏳' : '🚀'} Bullish
           </button>
-
-          <button
-            onClick={() => handleVote(0)}
-            disabled={loading || hasVoted}
-            className="btn btn-bearish"
-          >
+          <button onClick={() => handleVote(0)} disabled={loading || hasVoted} className="btn btn-bearish">
             {loading ? '⏳' : '📉'} Bearish
           </button>
         </div>
 
         {hasVoted && (
-          <div className="voted-message">
-            ✅ Vous avez déjà voté aujourd’hui. Revenez demain !
-          </div>
+          <div className="voted-message">✅ Vous avez déjà voté aujourd’hui. Revenez demain !</div>
         )}
 
         <div className="stats">
           <h3>Sentiment du jour</h3>
-
           <div className="counts">
             <div className="count-item">
               <span className="count-label">Bullish</span>
