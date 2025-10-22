@@ -6,10 +6,6 @@ import { useFarcasterContext } from '@/hooks/useFarcasterContext';
 import { fetchTodayCounts, submitVote } from '@/lib/contract';
 import { calculatePercentage, formatNumber } from '@/lib/utils';
 
-/* ----------------------------------------------------------
-   Déclare seulement le SDK de Warpcast (pas window.ethereum)
-   + export {} pour que ce fichier soit traité comme un module
------------------------------------------------------------*/
 declare global {
   interface Window {
     sdk?: {
@@ -21,7 +17,6 @@ declare global {
     };
   }
 }
-export {}; // évite les fusions globales qui créent les conflits TS
 
 export const MoodWidget: React.FC = () => {
   const [bullishCount, setBullishCount] = useState<bigint>(0n);
@@ -33,42 +28,46 @@ export const MoodWidget: React.FC = () => {
 
   const { fid: contextFid, isInWarpcast } = useFarcasterContext();
 
-  /* ---------- 1) Signaler "ready" à Warpcast (avec retries) ---------- */
+  /** ---------- ✅ Signaler “ready” à Warpcast ---------- **/
   const readyCalled = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const inWarpcast = window.self !== window.top;
-    if (!inWarpcast) return;
+    if (!inWarpcast) {
+      console.log('🧭 Not in Warpcast iframe → skip ready()');
+      return;
+    }
 
     const tryReady = () => {
       if (readyCalled.current) return;
-      if (window.sdk?.actions?.ready) {
-        window.sdk.actions.ready();
-        // Optionnel :
-        // window.sdk.actions.setTitle?.('ETH Mood Meter');
-        // window.sdk.actions.updateStatusBar?.({ color: '#667eea' });
+
+      const sdk = (window as any).sdk;
+      if (sdk?.actions?.ready) {
+        sdk.actions.ready();
+        sdk.actions.setTitle?.('ETH Mood Meter');
+        sdk.actions.updateStatusBar?.({ color: '#667eea' });
         readyCalled.current = true;
-        // console.log('Warpcast SDK ready called');
+        console.log('✅ Warpcast ready() called successfully');
+      } else {
+        console.log('⏳ Warpcast SDK not ready yet...');
       }
     };
 
+    // Essaye plusieurs fois
     tryReady();
-    const t1 = setTimeout(tryReady, 100);
-    const t2 = setTimeout(tryReady, 500);
-    const t3 = setTimeout(tryReady, 1500);
-    window.addEventListener('load', tryReady);
+    const retries = [100, 300, 1000, 2000];
+    const timers = retries.map((d) => setTimeout(tryReady, d));
 
+    window.addEventListener('load', tryReady);
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      timers.forEach(clearTimeout);
       window.removeEventListener('load', tryReady);
     };
   }, []);
 
-  /* ---------- 2) Compteurs on-chain ---------- */
+  /** ---------- Compteurs on-chain ---------- **/
   const updateCounts = async () => {
     try {
       const data = await fetchTodayCounts();
@@ -81,18 +80,18 @@ export const MoodWidget: React.FC = () => {
 
   useEffect(() => {
     updateCounts();
-    const interval = setInterval(updateCounts, 10_000);
+    const interval = setInterval(updateCounts, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  /* ---------- 3) Déjà voté aujourd’hui ? ---------- */
+  /** ---------- Déjà voté aujourd’hui ? ---------- **/
   useEffect(() => {
     const today = new Date().toDateString();
     const lastVote = typeof window !== 'undefined' ? localStorage.getItem('lastVoteDate') : null;
     setHasVoted(lastVote === today);
   }, []);
 
-  /* ---------- 4) Vote ---------- */
+  /** ---------- Vote ---------- **/
   const handleVote = async (mood: 0 | 1) => {
     const fid = contextFid || parseInt(manualFid, 10);
     if (!fid || Number.isNaN(fid)) {
@@ -124,7 +123,7 @@ export const MoodWidget: React.FC = () => {
       localStorage.setItem('lastVoteDate', today);
       setHasVoted(true);
 
-      showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré !`, 'success');
+      showToast(`Vote ${mood === 1 ? 'Bullish' : 'Bearish'} enregistré ! 🎉`, 'success');
       updateCounts();
     } catch (err: any) {
       console.error('Vote error:', err);
@@ -134,7 +133,7 @@ export const MoodWidget: React.FC = () => {
     }
   };
 
-  /* ---------- 5) UI ---------- */
+  /** ---------- UI ---------- **/
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -147,7 +146,7 @@ export const MoodWidget: React.FC = () => {
   return (
     <div className="mood-widget">
       <div className="card">
-        <h1 className="title">ETH Mood Meter</h1>
+        <h1 className="title">🐂 ETH Mood Meter 🐻</h1>
 
         {!isInWarpcast && (
           <div className="banner">
@@ -186,11 +185,7 @@ export const MoodWidget: React.FC = () => {
           </button>
         </div>
 
-        {hasVoted && (
-          <div className="voted-message">
-            ✅ Vous avez déjà voté aujourd’hui. Revenez demain !
-          </div>
-        )}
+        {hasVoted && <div className="voted-message">✅ Vous avez déjà voté aujourd’hui. Revenez demain !</div>}
 
         <div className="stats">
           <h3>Sentiment du jour</h3>
