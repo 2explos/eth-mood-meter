@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // Expose env côté client (inchangé)
   env: {
     NEXT_PUBLIC_URL: process.env.NEXT_PUBLIC_URL,
     NEXT_PUBLIC_RPC: process.env.NEXT_PUBLIC_RPC,
@@ -9,22 +10,27 @@ const nextConfig = {
     NEXT_PUBLIC_CONTRACT: process.env.NEXT_PUBLIC_CONTRACT,
   },
 
+  // 🔓 Autoriser l’embed dans Warpcast / farcaster
   async headers() {
     return [
       {
-        // apply to every route
-        source: '/:path*',
+        source: '/(.*)',
         headers: [
-          // IMPORTANT: allow Warpcast/Farcaster to embed your app
+          // ❌ Désactive X-Frame-Options (SAMEORIGIN bloquait l’iframe)
+          { key: 'X-Frame-Options', value: 'ALLOWALL' },
+          // ✅ CSP moderne pour autoriser les iframes de Warpcast
           {
             key: 'Content-Security-Policy',
-            value:
-              "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.com https://*.farcaster.xyz https://*.farcaster.dev;",
-          },
-          // Nice-to-haves
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Permissions-Policy', value: 'interest-cohort=()' },
+            value: [
+              "default-src 'self' https:;",
+              "img-src 'self' https: data: blob:;",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;",
+              "style-src 'self' 'unsafe-inline' https:;",
+              "connect-src 'self' https: wss:;",
+              // 👇 autorise qui peut embarquer ton site
+              "frame-ancestors https://warpcast.com https://*.warpcast.com https://*.farcaster.xyz;",
+            ].join(' ')
+          }
         ],
       },
     ];
