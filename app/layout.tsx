@@ -12,58 +12,43 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* Bridge très tôt vers Warpcast */}
-        <Script id="warpcast-bridge" strategy="afterInteractive">
+        <Script id="warpcast-bridge" strategy="beforeInteractive">
           {`
             (function () {
-              var tried = false;
-              function sendReady() {
-                if (tried) return; 
-                tried = true;
+              function poke() {
                 try {
                   if (window.sdk && window.sdk.actions && typeof window.sdk.actions.ready === 'function') {
                     window.sdk.actions.ready();
                   }
                 } catch (e) {}
-
                 try {
                   if (window.parent && window.parent !== window) {
                     window.parent.postMessage({ type: 'warpcast:ready' }, '*');
                     window.parent.postMessage({ type: 'miniapp_ready' }, '*');
-                    window.parent.postMessage({ type: 'frame:ready' }, '*');
+                    window.parent.postMessage({ type: 'frame_ready' }, '*');
                   }
                 } catch (e) {}
               }
 
-              function softTry() {
-                try {
-                  if (window.sdk && window.sdk.actions && typeof window.sdk.actions.ready === 'function') {
-                    window.sdk.actions.ready();
-                  }
-                  if (window.parent && window.parent !== window) {
-                    window.parent.postMessage({ type: 'warpcast:ready' }, '*');
-                  }
-                } catch (e) {}
-              }
+              // Plusieurs tentatives très tôt
+              poke();
+              setTimeout(poke, 80);
+              setTimeout(poke, 220);
+              setTimeout(poke, 800);
 
-              // Appel immédiat + retries
-              softTry();
-              setTimeout(softTry, 100);
-              setTimeout(softTry, 400);
-              setTimeout(softTry, 1200);
-
+              // "load" et "DOMContentLoaded"
               if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                setTimeout(sendReady, 0);
+                setTimeout(poke, 0);
               } else {
-                window.addEventListener('DOMContentLoaded', sendReady);
-                window.addEventListener('load', sendReady);
+                window.addEventListener('DOMContentLoaded', poke, { once: true });
+                window.addEventListener('load', poke, { once: true });
               }
 
-              // Si le parent nous "ping", on répond
+              // Si le parent ping → répondre
               window.addEventListener('message', function (ev) {
                 var t = ev && ev.data && ev.data.type;
                 if (t === 'warpcast:ping' || t === 'ready?' || t === 'miniapp:ping') {
-                  softTry();
+                  poke();
                 }
               });
             })();
